@@ -78,7 +78,7 @@ namespace ClaimProcessingRepository.SQL
                     {
                         vm.InputProcessedDateTo = ((DateTime)vm.InputProcessedDateTo).AddHours(23);
                     }
-
+                    // _traceNumbersList is 309 at this point
                     _traceNumbersList = SearchByProcessedDates(_clientCodeStringForAdoQUery, vm.InputProcessedDateFrom, vm.InputProcessedDateTo);
 
                     _userTable.Columns.Add("Tracenumber", typeof(string));
@@ -93,7 +93,7 @@ namespace ClaimProcessingRepository.SQL
                 if (vm.InputTraceNumber != null)
                 {
                     List<string> _interimResults = new List<string>();
-                    _interimResults.Add(vm.InputTraceNumber);
+                    _interimResults.Add(vm.InputTraceNumber); 
                     _traceNumbersList = _traceNumbersList.Intersect(_interimResults).ToList();
                 }
                 if (vm.InputInputFileID != null)
@@ -217,10 +217,9 @@ namespace ClaimProcessingRepository.SQL
                 {
                     List<string> _interimResults = new List<string>();
                     //GetTraceNumberFor PayerName with in Daterange of claims
-                    _interimResults = SearchByWebStatus(_clientCodeStringForAdoQUery, vm.InputIncludeArchived, vm.InputIncludePending, vm.InputIncludeViewed,
-                        vm.InputIncludeOnHold, vm.InputIncludeAttention,
+                    _traceNumbersList = SearchByWebStatus(_clientCodeStringForAdoQUery, vm.InputIncludeArchived, vm.InputIncludePending, vm.InputIncludeViewed,
+                        vm.InputIncludeOnHold, vm.InputIncludeAttention, vm.InputIncludeIgnore,
                         vm.InputProcessedDateFrom, vm.InputProcessedDateTo, _traceNumbersList,_userTable);
-                    _traceNumbersList = _traceNumbersList.Intersect(_interimResults).ToList();
                 }
 
                 //Search from QuickActions OR (used radio buttons -Accepted , Errored, Failed , All)
@@ -233,59 +232,6 @@ namespace ClaimProcessingRepository.SQL
                         vm.InputProcessedDateFrom, vm.InputProcessedDateTo, _traceNumbersList);
                     _traceNumbersList = _traceNumbersList.Intersect(_interimResults).ToList();
                 }
-
-
-
-                ////Get MySql status and then search for Clean/Errored/Rejected
-                //if (vm.SearchFromBatchClean)
-                //{
-
-                //    Claims = ClaimProcessingRepository.GetCleanClaimsForInputID(Convert.ToInt16(vm.InputInputFileID), null, vm.selectedPerPage, vm.LoggedInSecurityUserID,
-                //        vm.SortOnColumn, vm.SortType, (vm.CurrentPageNumber - 1) * vm.selectedPerPage, out totalnumberofrecords);
-
-                //    return Claims;
-                //}
-
-                //if (vm.SearchFromBatchErrored)
-                //{
-
-
-                //    Claims = ClaimProcessingRepository.GetErroredClaimsForInputID(Convert.ToInt16(vm.InputInputFileID), null, vm.selectedPerPage, vm.LoggedInSecurityUserID,
-                //        vm.SortOnColumn, vm.SortType, (vm.CurrentPageNumber - 1) * vm.selectedPerPage, out totalnumberofrecords);
-
-                //    return Claims;
-                //}
-
-                //if (vm.SearchFromBatchRejected)
-                //{
-
-                //    Claims = ClaimProcessingRepository.GetRejectedClaimsForInputID(Convert.ToInt16(vm.InputInputFileID), null, vm.selectedPerPage,
-                //        vm.LoggedInSecurityUserID, vm.SortOnColumn, vm.SortType, (vm.CurrentPageNumber - 1) * vm.selectedPerPage,
-                //        out totalnumberofrecords);
-                //    return Claims;
-                //}
-
-
-
-
-                ////Apply pagenation
-                //if (vm.SortOnColumn == null && vm.SortType == null)
-                //{
-                //    _traceNumbersList =
-                //        _traceNumbersList.Skip((vm.CurrentPageNumber - 1) * vm.selectedPerPage)
-                //            .Take(vm.selectedPerPage)
-                //            .ToList();
-                //}
-                //else
-                //{
-                //    Claims = ClaimProcessingRepository.sort(_traceNumbersList, vm.SortOnColumn, vm.SortType, vm.CurrentPageNumber, vm.selectedPerPage);
-                //    return Claims;
-                //}
-                ////GetClaimsForTraceNumberList and populate ClaimModel
-
-
-
-
             }
             catch (Exception e)
             {
@@ -487,7 +433,7 @@ namespace ClaimProcessingRepository.SQL
 
 
         private static List<string> SearchByWebStatus(string _clientCodeStringForAdoQUery, bool inputIncludeArchived, bool inputIncludePending, bool inputIncludeViewed,
-            bool inputIncludeOnHold, bool inputIncludeAttention, DateTime? inputProcessedDateFrom, DateTime? inputProcessedDateTo, List<string> _traceNumbersList,DataTable InputTraceNumbers)
+            bool inputIncludeOnHold, bool inputIncludeAttention, bool inputIncludeIgnore, DateTime? inputProcessedDateFrom, DateTime? inputProcessedDateTo, List<string> _traceNumbersList,DataTable InputTraceNumbers)
         {
             List<string> _resultTraceNumbers = new List<string>();
             List<string> _archivedTraceNumbers = new List<string>();
@@ -495,13 +441,15 @@ namespace ClaimProcessingRepository.SQL
             List<string> _viewedTraceNumbers = new List<string>();
             List<string> _onHoldTraceNumbers = new List<string>();
             List<string> _attentionTraceNumbers = new List<string>();
-            if (inputIncludeArchived && inputIncludePending && inputIncludeViewed && inputIncludeOnHold && inputIncludeAttention)
+            List<string> _ignoreTraceNumbers = new List<string>();
+
+            if (inputIncludeArchived && inputIncludePending && inputIncludeViewed && inputIncludeOnHold && inputIncludeAttention && inputIncludeIgnore)
             {
                 return _traceNumbersList;
             }
+            // When Only Ignore Is Checked It Goes In Here
             else
             {
-                string _traceNumbersstring = "";
                 if (_traceNumbersList.Count > 0)
                 {
                     List<SqlParameter> parameters = new List<SqlParameter>();
@@ -511,84 +459,54 @@ namespace ClaimProcessingRepository.SQL
                     parameters.Add(paramtr);
                     //Get status for all the listed Tracenumbers
                     string _statuses = @"SELECT s.Tracenumber,StatusDetails from claimwebstatus s 
- join @InputTraceNumbers ip on ip.TraceNumber = s.Tracenumber  
-where id = (select max(id) from claimwebstatus w2 where w2.tracenumber = s.tracenumber) ";
+                                         join @InputTraceNumbers ip on ip.TraceNumber = s.Tracenumber  
+                                         where id = (select max(id) from claimwebstatus w2 where w2.tracenumber = s.tracenumber) ";
                     string _connectionstringName = "WebPortal";
                     List<string> _toRetrieve = new List<string>() { "Tracenumber", "StatusDetails" };
                     CommandType type = CommandType.Text;
                     DataSet _globalds = DBFactories.DBFactory.RunQuery(_connectionstringName, _statuses, type,parameters);
                     List<TraceAndStatus> _ts = new List<TraceAndStatus>();
                     _ts = ReadFromResultDataset2(_toRetrieve, s_tableName, _globalds);
-                    
 
                     _archivedTraceNumbers = _ts.Where(c => c.StatusDetails == "Archived").Select(c => c.TraceNumber).ToList();
                     _pendingTraceNumbers = _ts.Where(c => c.StatusDetails == "Pending").Select(c => c.TraceNumber).ToList();
                     _viewedTraceNumbers = _ts.Where(c => c.StatusDetails == "Viewed").Select(c => c.TraceNumber).ToList();
-                    _onHoldTraceNumbers = _ts.Where(c => c.StatusDetails == "OnHold").Select(c => c.TraceNumber).ToList();
+                    _onHoldTraceNumbers = _ts.Where(c => c.StatusDetails == "On Hold").Select(c => c.TraceNumber).ToList();
                     _attentionTraceNumbers = _ts.Where(c => c.StatusDetails == "Attention").Select(c => c.TraceNumber).ToList();
-
+                    _ignoreTraceNumbers = _ts.Where(c => c.StatusDetails.Trim() == "Ignore").Select(c => c.TraceNumber.Trim()).ToList();
                     var _noStatusTraceNumbers = _traceNumbersList.Except(_ts.Select(c => c.TraceNumber)).ToList();
                     _pendingTraceNumbers.AddRange(_noStatusTraceNumbers);
-
-
                 }
-
-
-
-
 
                 if (inputIncludeArchived)
                 {
                     _resultTraceNumbers.AddRange(_archivedTraceNumbers);
-                    //        string query = @"SELECT TraceNumber from claimwebstatus s where id=(select max(id) from claimwebstatus w2 where w2.tracenumber=s.tracenumber) 
-                    //            and StatusDetails in ('Archived') and Tracenumber in (" + TraceNumbersstring + ")";
-
-                    //        DataSet ds = DBFactories.DBFactory.RunQuery(connectionstringName, query, type, null);
-                    //        ResultTraceNumbers = ReadFromResultDataset(s_columnNamesToRetrieve, s_tableName, ds);
-                    //        // return ResultTraceNumbers;
+ 
                 }
                 if (inputIncludePending)
                 {
                     _resultTraceNumbers.AddRange(_pendingTraceNumbers);
-                    //        string query = @"SELECT TraceNumber from claimwebstatus s where id=(select max(id) from claimwebstatus w2 where w2.tracenumber=s.tracenumber) 
-                    //            and StatusDetails in ('Pending') and Tracenumber in (" + TraceNumbersstring + ")";
-
-                    //        DataSet ds = DBFactories.DBFactory.RunQuery(connectionstringName, query, type, null);
-                    //        ResultTraceNumbers = ReadFromResultDataset(s_columnNamesToRetrieve, s_tableName, ds);
-                    //        // return ResultTraceNumbers;
-
-                    //        //Not ezisting in status table is equal to pending status
-                    //        query = @"SELECT TraceNumber from claimwebstatus s where not exists Tracenumber in (" + TraceNumbersstring + ")";
-                    //        DataSet ds2 = DBFactories.DBFactory.RunQuery(connectionstringName, query, type, null);
-                    //        ResultTraceNumbers = ReadFromResultDataset(s_columnNamesToRetrieve, s_tableName, ds2);
 
                 }
                 if (inputIncludeViewed)
                 {
                     _resultTraceNumbers.AddRange(_viewedTraceNumbers);
-                    //        string query = @"SELECT TraceNumber from claimwebstatus s where id=(select max(id) from claimwebstatus w2 where w2.tracenumber=s.tracenumber) 
-                    //            and StatusDetails in ('Viewed') and Tracenumber in (" + TraceNumbersstring + ")";
-                    //        DataSet ds = DBFactories.DBFactory.RunQuery(connectionstringName, query, type, null);
-                    //        ResultTraceNumbers = ReadFromResultDataset(s_columnNamesToRetrieve, s_tableName, ds);
-                    //        // return ResultTraceNumbers;
+                    
                 }
                 if (inputIncludeOnHold)
                 {
                     _resultTraceNumbers.AddRange(_onHoldTraceNumbers);
-                    //        string query = @"SELECT TraceNumber from claimwebstatus s where id=(select max(id) from claimwebstatus w2 where w2.tracenumber=s.tracenumber) 
-                    //            and StatusDetails in ('OnHold') and Tracenumber in (" + TraceNumbersstring + ")";
-                    //        DataSet ds = DBFactories.DBFactory.RunQuery(connectionstringName, query, type, null);
-                    //        ResultTraceNumbers = ReadFromResultDataset(s_columnNamesToRetrieve, s_tableName, ds);
-                    //        // return ResultTraceNumbers;
+                   
+                   
                 }
                 if (inputIncludeAttention)
                 {
                     _resultTraceNumbers.AddRange(_attentionTraceNumbers);
-                    //        string query = @"SELECT TraceNumber from claimwebstatus s where id=(select max(id) from claimwebstatus w2 where w2.tracenumber=s.tracenumber) 
-                    //            and StatusDetails in ('Attention') and Tracenumber in (" + TraceNumbersstring + ")";
-                    //        DataSet ds = DBFactories.DBFactory.RunQuery(connectionstringName, query, type, null);
-                    //        ResultTraceNumbers = ReadFromResultDataset(s_columnNamesToRetrieve, s_tableName, ds);
-                    //        // return ResultTraceNumbers;
+                    
+                }
+                if (inputIncludeIgnore)
+                {
+                    _resultTraceNumbers.AddRange(_ignoreTraceNumbers);
                 }
             }
             return _resultTraceNumbers;
